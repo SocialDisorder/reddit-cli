@@ -1,0 +1,211 @@
+#! /usr/bin/python3
+
+import ueberzug.lib.v0 as ueberzug
+import time
+import json
+import requests
+from PIL import Image
+import getch
+import os
+import requests
+from bs4 import BeautifulSoup
+
+temp_image = '/tmp/reddit_tmp.jpg'
+threads_file = 'threads.txt'
+threads_dir = os.path.expanduser('~/.config/reddit-cli/')
+threads_path = os.path.expanduser(threads_dir + threads_file)
+
+def get_html(permalink):
+    url = 'https://www.reddit.com' + permalink
+    res = requests.get(url, headers = {'User-agent': 'your bot 0.1'})
+    return res.text
+
+def get_json(thread , limit = 100):
+    url = 'https://www.reddit.com/r/' + thread + '/hot.json?limit=' + str(limit)
+    res = requests.get(url, headers = {'User-agent': 'your bot 0.1'})
+    return res.text
+
+def clearConsole():
+    command = 'clear'
+    if os.name in ('nt', 'dos'):  # If Machine is running on Windows, use cls
+        command = 'cls'
+    os.system(command)
+
+def get_img(current_data):
+    img_data = requests.get(current_data[1]).content
+    with open(temp_image, 'wb') as handler:
+        handler.write(img_data)
+    image = Image.open(temp_image)
+    image.thumbnail((800, 800), Image.Resampling.LANCZOS)
+    image.save(temp_image, 'PNG', quality=88)
+
+
+def draw_img(img_path):
+	with ueberzug.Canvas() as c:
+		demo = c.create_placement('demo', x=0, y=0, scaler=ueberzug.ScalerOption.COVER.value)
+		demo.path = img_path
+		demo.visibility = ueberzug.Visibility.VISIBLE
+
+		with c.lazy_drawing:
+			demo.x = 0
+			demo.y = 4
+
+		return getch.getch()
+
+def load_stuff(str_text):
+    json_data = json.loads(str_text)
+    data = json_data['data']
+    children = data['children']
+    return children
+
+def parse_stuff(loaded_stuff):
+    infos = list()
+
+    for ch in loaded_stuff:
+        data = ch['data']
+        author_fullname = data['author']
+        thumbnail = data['url']
+        ups = data['ups']
+        title = data['title']
+        num_comments = data['num_comments']
+        permalink = data['permalink']
+        infos.append([author_fullname, thumbnail, ups, title, num_comments, permalink])
+
+
+    infos = list(filter(lambda x: not(x[0] == None or x[1] == None or x[2] == None or x[3] == None), infos))
+    return infos
+
+def get_choice(lines, printText=''):
+    index = 0
+    while True:
+        clearConsole()
+        print(printText)
+        ch_size = len(lines)
+        for i in range(ch_size):
+            if i == index:
+                print('[*] ',lines[i])
+            else:
+                print('[]  ',lines[i])
+        action = getch.getch()
+        if action == ' ':
+            return lines[index]
+        if action == 'j':
+            if index < ch_size -1:
+                index += 1
+            else:
+                index = 0
+        if action == 'k':
+            if index > 0:
+                index -= 1
+            else:
+                index = ch_size-1
+        if action == 'q':
+            exit()
+
+def choose_thread():
+    if not os.path.exists(threads_dir):
+        os.makedirs(threads_dir)
+        with open(threads_path, 'w') as f:
+            f.write('linuxmemes\nunixporn\n')
+
+    with open(threads_dir + threads_file,'r') as f:
+        lines = f.read().splitlines()
+        return get_choice(lines, 'use j/k to go up/down and space to continue')
+
+def main_loop():
+    thread = choose_thread()
+    text = get_json(thread)
+    children = load_stuff(text)
+    parsed = parse_stuff(children)
+
+    ch_size = len(parsed)
+
+    index = 0
+
+    while True:
+        clearConsole()
+        try:
+            print('post: ',index+1,'/',ch_size)
+            current=parsed[index]
+            print('author: ',current[0], ' upvotes: ', current[2])
+            print('title: ',current[3])
+            print('comments: ', current[4])
+            get_img(current)
+            img = temp_image
+            action = draw_img(img)
+        except:
+            print('no image loaded...')
+            action = getch.getch()
+        if action == 'j':
+            if index < ch_size -1:
+                index += 1
+            else:
+                index = 0
+        if action == 'k':
+            if index > 0:
+                index -= 1
+            else:
+                index = ch_size-1
+        if action == 'q':
+            exit()
+        if action == ':':
+            clearConsole()
+            inp = input('choose post number from 0 and ' + str(ch_size) +' and select by enter:\n')
+            try:
+                number = int(inp)
+                if number < ch_size -1 and number >= 0:
+                    index = number - 1
+            except:
+                pass
+        if action == 'c' and current[4] != 0:
+            html = get_html(current[5])
+            comments = get_comments(html)
+            comment_index = 0
+            com_size = len(comments)
+            wanna_continue = True
+            while wanna_continue:
+                clearConsole()
+                print('post: ',index+1,'/',ch_size)
+                current=parsed[index]
+                print('author: ',current[0], ' upvotes: ', current[2])
+                print('title: ',current[3])
+                print('comment: ',comment_index+1,'/',com_size)
+                print('author: ', comments[comment_index][0])
+                print('comment:')
+                print(comments[comment_index][1])
+                action = getch.getch()
+                if action == 'j':
+                    if comment_index < com_size -1:
+                        comment_index += 1
+                    else:
+                        comment_index = 0
+                if action == 'k':
+                    if comment_index > 0:
+                        comment_index -= 1
+                    else:
+                        comment_index = com_size-1
+                if action == 'q':
+                    wanna_continue = False
+                if action == ':':
+                    clearConsole()
+                    inp = input('choose comment number from 0 and ' + str(com_size) +' and select by enter:\n')
+                    try:
+                        number = int(inp)
+                        if number < com_size -1 and number >= 0:
+                            comment_index = number - 1
+                    except:
+                        pass
+
+def get_comments(html):
+    S = BeautifulSoup(html, 'lxml')
+
+    Authors = S.body.findAll('a', attrs={'class' : 'author'})
+    Comments = S.body.findAll('div', attrs={'class' : 'md'})
+
+    comments = list()
+
+    for i in range(1, len(Authors)):
+        comments.append([Authors[i].text, Comments[i].text])
+    return comments
+
+main_loop()
